@@ -37,13 +37,11 @@ def get_server_time() -> int:
     return r.json()['serverTime']
 
 def get_prices() -> dict:
-    symbols = json.dumps([PAIRS[c] for c in COINS])
-    r = requests.get(f"{BASE_URL}/api/v3/ticker/price", params={'symbols': symbols})
     prices = {}
-    for item in r.json():
-        coin = next((c for c in COINS if PAIRS[c] == item['symbol']), None)
-        if coin:
-            prices[coin] = float(item['price'])
+    for coin in COINS:
+        r = requests.get(f"{BASE_URL}/api/v3/ticker/price", params={'symbol': PAIRS[coin]})
+        data = r.json()
+        prices[coin] = float(data['price'])
     return prices
 
 def get_balances() -> dict:
