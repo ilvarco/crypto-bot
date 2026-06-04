@@ -39,9 +39,18 @@ def get_server_time() -> int:
 def get_prices() -> dict:
     prices = {}
     for coin in COINS:
-        r = requests.get(f"{BASE_URL}/api/v3/ticker/price", params={'symbol': PAIRS[coin]})
-        data = r.json()
-        prices[coin] = float(data['price'])
+        try:
+            r = requests.get(f"{BASE_URL}/api/v3/ticker/price", params={'symbol': PAIRS[coin]}, timeout=10)
+            log(f"API {coin} status:{r.status_code} resp:{r.text[:100]}")
+            data = r.json()
+            if isinstance(data, dict) and 'price' in data:
+                prices[coin] = float(data['price'])
+            elif isinstance(data, list) and len(data) > 0:
+                prices[coin] = float(data[0]['price'])
+            else:
+                log(f"Respuesta inesperada para {coin}: {data}")
+        except Exception as e:
+            log(f"Error obteniendo precio de {coin}: {e}")
     return prices
 
 def get_balances() -> dict:
