@@ -1,5 +1,6 @@
 import time, hmac, hashlib, requests
 from datetime import datetime
+from math import floor
 
 API_KEY = open('/root/apikey.txt').read().strip().split('\n')[0]
 SECRET_KEY = open('/root/apikey.txt').read().strip().split('\n')[1]
@@ -12,6 +13,7 @@ BASE_URL = 'https://api.binance.com'
 current_coin = START_COIN
 base_prices = {}
 total_gain = 0.0
+lot_sizes = {}
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -23,6 +25,21 @@ def sign(params):
 
 def get_time():
     return requests.get(f"{BASE_URL}/api/v3/time").json()['serverTime']
+
+def get_lot_size(symbol):
+    if symbol in lot_sizes:
+        return lot_sizes[symbol]
+    r = requests.get(f"{BASE_URL}/api/v3/exchangeInfo", params={'symbol': symbol})
+    for f in r.json()['symbols'][0]['filters']:
+        if f['filterType'] == 'LOT_SIZE':
+            step = float(f['stepSize'])
+            lot_sizes[symbol] = step
+            return step
+    return 0.001
+
+def round_step(qty, step):
+    precision = len(str(step).rstrip('0').split('.')[-1]) if '.' in str(step) else 0
+    return round(floor(qty / step) * step, precision)
 
 def get_prices():
     prices = {}
@@ -41,14 +58,15 @@ def get_balances():
     signed = sign({'timestamp': ts})
     r = requests.get(f"{BASE_URL}/api/v3/account?{signed}", headers={'X-MBX-APIKEY': API_KEY})
     data = r.json()
-    log(f"Balances: {str(data)[:300]}")
     if 'balances' not in data:
         raise Exception(f"Error balances: {data}")
     return {b['asset']: float(b['free']) for b in data['balances'] if b['asset'] in COINS}
 
 def order(symbol, side, qty):
+    step = get_lot_size(symbol)
+    qty = round_step(qty, step)
     ts = get_time()
-    signed = sign({'symbol': symbol, 'side': side, 'type': 'MARKET', 'quantity': round(qty, 6), 'timestamp': ts})
+    signed = sign({'symbol': symbol, 'side': side, 'type': 'MARKET', 'quantity': qty, 'timestamp': ts})
     r = requests.post(f"{BASE_URL}/api/v3/order", headers={'X-MBX-APIKEY': API_KEY, 'Content-Type': 'application/x-www-form-urlencoded'}, data=signed)
     data = r.json()
     if 'code' in data:
@@ -56,38 +74,4 @@ def order(symbol, side, qty):
     return data
 
 def swap(fc, tc, balances, prices):
-    sq = round(balances[fc] * 0.999, 6)
-    log(f"  Vendiendo {sq} {fc}")
-    res = order(fc + 'USDT', 'SELL', sq)
-    usdt = float(res['cummulativeQuoteQty']) * 0.999
-    time.sleep(1.5)
-    bq = round(usdt / prices[tc] * 0.999, 6)
-    log(f"  Comprando {bq} {tc}")
-    order(tc + 'USDT', 'BUY', bq)
-
-def cycle():
-    global current_coin, base_prices, total_gain
-    prices = get_prices()
-    for c in COINS:
-        if c not in base_prices and c in prices:
-            base_prices[c] = prices[c]
-    if len(prices) < 4:
-        return
-    pcts = {c: (prices[c] - base_prices[c]) / base_prices[c] * 100 for c in COINS if c in prices and c in base_prices}
-    best = min(pcts, key=pcts.get)
-    diff = abs(pcts[best] - pcts[current_coin])
-    log(f"{current_coin}({pcts[current_coin]:.2f}%) -> mejor:{best}({pcts[best]:.2f}%) diff:{diff:.2f}%")
-    if best != current_coin and diff >= THRESHOLD:
-        balances = get_balances()
-        swap(current_coin, best, balances, prices)
-        total_gain += diff - COMMISSION
-        current_coin = best
-        log(f"OK rotacion | acum: +{total_gain:.2f}%")
-
-log("BOT INICIADO")
-while True:
-    try:
-        cycle()
-    except Exception as e:
-        log(f"ERROR: {e}")
-    time.sleep(30)
+    sq = balances[fc] *
