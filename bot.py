@@ -4,7 +4,7 @@ from math import floor
 
 API_KEY = open('/root/apikey.txt').read().strip().split('\n')[0]
 SECRET_KEY = open('/root/apikey.txt').read().strip().split('\n')[1]
-THRESHOLD = 0.5
+THRESHOLD = 0.3
 START_COIN = 'BNB'
 COMMISSION = 0.15
 COINS = ['BTC', 'ETH', 'SOL', 'BNB']
