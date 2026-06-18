@@ -1,0 +1,14 @@
+[Unit]
+Description=Panel web bot SAR
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/bot
+ExecStart=/usr/bin/python3 /root/bot/v2_panel.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
