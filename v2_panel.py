@@ -276,16 +276,22 @@ function svgChart(acc){
 }
 async function botData(){
   let d; try{d=await (await fetch("/datos")).json();}catch(e){return;}
-  // banner: si el log dice algo del estado y el 4H no cargo, igual lo mostramos abajo
-  const cards=document.getElementById("cards"),st=d.state;
+  const cards=document.getElementById("cards"),st=d.state,trades=d.trades;
   const sells=d.acc;
-  const pos = st ? (st.pos.indexOf("NEAR")>=0 ? "NEAR" : "BTC") : "—";
-  let posV = pos==="NEAR" ? `<span class="v green">NEAR</span>` : (pos==="BTC"?`<span class="v gold">BTC</span>`:`<span class="v">—</span>`);
-  const btcNow = st ? (pos==="NEAR" ? st.btc : st.btc) : 0;
+  // posicion REAL: del ultimo trade (la foto actual), no de la linea de estado vieja
+  let pos="—", holdK="btc en mano", holdV="—", holdCls="gold";
+  if(trades.length){
+    const last=trades[trades.length-1];
+    if(last.side==="VENTA"){ pos="BTC"; holdV=(+last.btc_after).toFixed(6); }
+    else { pos="NEAR"; holdK="near en mano"; holdV=last.near_after.toFixed(1); holdCls="green"; }
+  } else if(st){
+    pos = st.pos.indexOf("NEAR")>=0 ? "NEAR" : "BTC";
+    if(pos==="BTC"){ holdV=(+st.btc).toFixed(6); } else { holdK="near en mano"; holdV=st.near.toFixed(1); holdCls="green"; }
+  }
   cards.innerHTML=`
     <div class="card"><div class="k">posición</div><div class="v ${pos==='NEAR'?'green':'gold'}">${pos}</div></div>
     <div class="card"><div class="k">vueltas</div><div class="v">${sells.length}</div></div>
-    <div class="card"><div class="k">btc en mano</div><div class="v gold">${st?(+st.btc).toFixed(6):'—'}</div></div>`;
+    <div class="card"><div class="k">${holdK}</div><div class="v ${holdCls}">${holdV}</div></div>`;
   // acumulacion stats + chart
   const cap=document.getElementById("accCap");
   if(sells.length>=2){
