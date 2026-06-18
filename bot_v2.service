@@ -1,0 +1,16 @@
+[Unit]
+Description=Bot SAR NEAR/BTC v2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/bot
+ExecStart=/usr/bin/python3 /root/bot/bot_v2.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/root/bot/v2_service.out
+StandardError=append:/root/bot/v2_service.out
+
+[Install]
+WantedBy=multi-user.target
