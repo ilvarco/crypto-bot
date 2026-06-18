@@ -171,3 +171,113 @@ def set_halt(reason):
             f.write(reason + "\n")
     except Exception:
         pass
+    log(f"!!! FRENO DE MANO ACTIVADO: {reason}")
+    log("!!! El bot NO va a operar hasta que revises y borres " + HALT_FILE)
+
+def do_sell(bal_before):
+    near = bal_before.get(BASE_ASSET, 0.0)
+    qty  = floor_step(near, FILT["step"])
+    if qty < FILT["minQty"]:
+        log(f"NEAR insuficiente para vender ({near}). Lo trato como FLAT.")
+        return
+    if DRY_RUN:
+        log(f"DRY: venderia {qty} {BASE_ASSET} -> {QUOTE_ASSET} (a mercado)")
+        return
+    log(f"Enviando VENTA market de {qty} {BASE_ASSET} ...")
+    resp = signed("POST", "/api/v3/order",
+                  {"symbol": SYMBOL, "side": "SELL", "type": "MARKET", "quantity": qty})
+    status = resp.get("status"); exq = float(resp.get("executedQty", 0))
+    log(f"Respuesta orden: status={status} executedQty={exq}")
+    # VERIFICACION contra el saldo real
+    time.sleep(2)
+    after = get_balances()
+    near_after = after.get(BASE_ASSET, 0.0); btc_after = after.get(QUOTE_ASSET, 0.0)
+    near_before = bal_before.get(BASE_ASSET, 0.0); btc_before = bal_before.get(QUOTE_ASSET, 0.0)
+    vendio = (near_before - near_after) >= qty * 0.95
+    entro_btc = btc_after > btc_before
+    if status == "FILLED" and vendio and entro_btc:
+        log(f"OK VENTA confirmada: {BASE_ASSET} {near_before:.4f}->{near_after:.4f} | "
+            f"{QUOTE_ASSET} {btc_before:.8f}->{btc_after:.8f}")
+    else:
+        set_halt(f"VENTA no reconcilia: status={status} "
+                 f"{BASE_ASSET} {near_before:.4f}->{near_after:.4f} "
+                 f"{QUOTE_ASSET} {btc_before:.8f}->{btc_after:.8f}")
+
+def do_buy(bal_before):
+    btc = bal_before.get(QUOTE_ASSET, 0.0)
+    quote = math.floor(btc * BUY_BUFFER * 1e8) / 1e8
+    if quote < FILT["minNotional"]:
+        log(f"BTC insuficiente para comprar ({btc}). Lo trato como ya-FLAT.")
+        return
+    if DRY_RUN:
+        log(f"DRY: compraria {BASE_ASSET} gastando {quote:.8f} {QUOTE_ASSET} (a mercado)")
+        return
+    log(f"Enviando COMPRA market gastando {quote:.8f} {QUOTE_ASSET} ...")
+    resp = signed("POST", "/api/v3/order",
+                  {"symbol": SYMBOL, "side": "BUY", "type": "MARKET", "quoteOrderQty": quote})
+    status = resp.get("status"); exq = float(resp.get("executedQty", 0))
+    log(f"Respuesta orden: status={status} executedQty={exq}")
+    time.sleep(2)
+    after = get_balances()
+    near_after = after.get(BASE_ASSET, 0.0); btc_after = after.get(QUOTE_ASSET, 0.0)
+    near_before = bal_before.get(BASE_ASSET, 0.0); btc_before = bal_before.get(QUOTE_ASSET, 0.0)
+    compro = near_after > near_before
+    gasto  = btc_after < btc_before
+    if status == "FILLED" and compro and gasto:
+        log(f"OK COMPRA confirmada: {QUOTE_ASSET} {btc_before:.8f}->{btc_after:.8f} | "
+            f"{BASE_ASSET} {near_before:.4f}->{near_after:.4f}")
+    else:
+        set_halt(f"COMPRA no reconcilia: status={status} "
+                 f"{QUOTE_ASSET} {btc_before:.8f}->{btc_after:.8f} "
+                 f"{BASE_ASSET} {near_before:.4f}->{near_after:.4f}")
+
+# --------------------------- LOOP PRINCIPAL --------------------------------
+def main():
+    global API_KEY, API_SECRET
+    API_KEY, API_SECRET = load_keys()
+    sync_time()
+    load_filters()
+    log(f"=== bot_v2 arrancado | DRY_RUN={DRY_RUN} | {SYMBOL} {INTERVAL} | "
+        f"SAR({AF_STEP},{AF_MAX}) | step={FILT['step']} minNotional={FILT['minNotional']} ===")
+
+    last_seen_close = None
+    while True:
+        try:
+            if halted():
+                log("FRENO DE MANO activo, no opero. (borra el .flag para reanudar)")
+                time.sleep(POLL_SEC); continue
+
+            sync_time()
+            H, L, C = get_closed_klines()
+            up = psar(H, L)
+            green_now = up[-1]                      # senal CONFIRMADA (ultima vela cerrada)
+
+            price = last_price()
+            bal = get_balances()
+            near = bal.get(BASE_ASSET, 0.0); btc = bal.get(QUOTE_ASSET, 0.0)
+            near_val_btc = near * price
+            holding_near = near_val_btc >= max(FILT["minNotional"], FILT["minQty"] * price)
+            btc_enough   = btc >= FILT["minNotional"]
+
+            action = decide(green_now, holding_near, btc_enough)
+
+            # log de estado una vez por vela nueva (para no spammear cada 5 min)
+            if last_seen_close != C[-1]:
+                estado = "LARGO(NEAR)" if holding_near else ("BTC" if btc_enough else "vacio")
+                log(f"vela cerrada | SAR={'VERDE' if green_now else 'ROJO'} | "
+                    f"tengo {estado} (NEAR={near:.2f} ~{near_val_btc:.6f}BTC, BTC={btc:.8f}) | "
+                    f"accion={action}")
+                last_seen_close = C[-1]
+
+            if action == "SELL":
+                do_sell(bal)
+            elif action == "BUY":
+                do_buy(bal)
+            # HOLD -> nada
+
+        except Exception as e:
+            log(f"ERROR loop: {e}")
+        time.sleep(POLL_SEC)
+
+if __name__ == "__main__":
+    main()
