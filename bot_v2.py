@@ -40,7 +40,7 @@ POLL_SEC    = 300           # reviso cada 5 min; solo actuo sobre vela CERRADA
 RECV_WINDOW = 60000
 BUY_BUFFER  = 0.999         # al comprar gasto 99.9% del BTC (deja aire p/ redondeo)
 
-DRY_RUN     = True          # <<<<<<  ARRANCA ASI. Pasar a False solo tras validar.
+DRY_RUN     = False         # arreglo de precision aplicado; va directo a real
 
 BASE_URL    = "https://api.binance.com"
 DIR         = "/root/bot"
@@ -119,9 +119,20 @@ def load_filters():
     mn = f.get("NOTIONAL") or f.get("MIN_NOTIONAL")
     FILT["minNotional"] = float(mn["minNotional"]) if mn else 0.0
 
+def step_decimals(step):
+    # cuantos decimales tiene el step (0.1 -> 1, 0.001 -> 3, 1 -> 0)
+    s = ("%.10f" % step).rstrip("0").rstrip(".")
+    return len(s.split(".")[1]) if "." in s else 0
+
 def floor_step(qty, step):
     if step <= 0: return qty
-    return math.floor(qty / step) * step
+    dec = step_decimals(step)
+    floored = math.floor(qty / step) * step
+    return float(f"{floored:.{dec}f}")   # corta la cola de floats (994.9000001 -> 994.9)
+
+def fmt_qty(qty, step):
+    # string limpio para mandarle a Binance (evita el error -1111 'too much precision')
+    return f"{qty:.{step_decimals(step)}f}"
 
 # --------------------------- KLINES + SAR ----------------------------------
 def get_closed_klines(limit=LOOKBACK):
@@ -210,12 +221,13 @@ def do_sell(bal_before):
     if qty < FILT["minQty"]:
         log(f"NEAR insuficiente para vender ({near}). Lo trato como FLAT.")
         return
+    qty_str = fmt_qty(qty, FILT["step"])
     if DRY_RUN:
-        log(f"DRY: venderia {qty} {BASE_ASSET} -> {QUOTE_ASSET} (a mercado)")
+        log(f"DRY: venderia {qty_str} {BASE_ASSET} -> {QUOTE_ASSET} (a mercado)")
         return
-    log(f"Enviando VENTA market de {qty} {BASE_ASSET} ...")
+    log(f"Enviando VENTA market de {qty_str} {BASE_ASSET} ...")
     resp = signed("POST", "/api/v3/order",
-                  {"symbol": SYMBOL, "side": "SELL", "type": "MARKET", "quantity": qty})
+                  {"symbol": SYMBOL, "side": "SELL", "type": "MARKET", "quantity": qty_str})
     status = resp.get("status"); exq = float(resp.get("executedQty", 0))
     log(f"Respuesta orden: status={status} executedQty={exq}")
     # VERIFICACION contra el saldo real
@@ -239,12 +251,13 @@ def do_buy(bal_before):
     if quote < FILT["minNotional"]:
         log(f"BTC insuficiente para comprar ({btc}). Lo trato como ya-FLAT.")
         return
+    quote_str = f"{quote:.8f}"
     if DRY_RUN:
-        log(f"DRY: compraria {BASE_ASSET} gastando {quote:.8f} {QUOTE_ASSET} (a mercado)")
+        log(f"DRY: compraria {BASE_ASSET} gastando {quote_str} {QUOTE_ASSET} (a mercado)")
         return
-    log(f"Enviando COMPRA market gastando {quote:.8f} {QUOTE_ASSET} ...")
+    log(f"Enviando COMPRA market gastando {quote_str} {QUOTE_ASSET} ...")
     resp = signed("POST", "/api/v3/order",
-                  {"symbol": SYMBOL, "side": "BUY", "type": "MARKET", "quoteOrderQty": quote})
+                  {"symbol": SYMBOL, "side": "BUY", "type": "MARKET", "quoteOrderQty": quote_str})
     status = resp.get("status"); exq = float(resp.get("executedQty", 0))
     log(f"Respuesta orden: status={status} executedQty={exq}")
     time.sleep(2)
