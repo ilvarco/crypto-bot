@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ============================================================================
-#  bot_v2.py  -  Bot de tendencia COMBO (SAR + Supertrend), NEAR/BTC, velas 4h
+#  bot_v2_render.py - Bot COMBO (SAR + Supertrend), RENDER/BTC, 4h, REAL (tope 0.01)
 #               largo SOLO si SAR verde Y Supertrend verde; si no, refugio en BTC
 # ----------------------------------------------------------------------------
 #  Reescrito desde cero con las correcciones que sacamos del bug del bot viejo:
@@ -29,8 +29,8 @@ from urllib.parse import urlencode
 import requests
 
 # ----------------------------- CONFIG --------------------------------------
-SYMBOL      = "NEARBTC"
-BASE_ASSET  = "NEAR"        # lo que tengo cuando estoy LARGO
+SYMBOL      = "RENDERBTC"
+BASE_ASSET  = "RENDER"        # lo que tengo cuando estoy LARGO
 QUOTE_ASSET = "BTC"         # lo que tengo cuando estoy en refugio
 INTERVAL    = "4h"
 AF_STEP, AF_MAX = 0.02, 0.2 # SAR(0.02, 0.2) - igual que el backtest
@@ -39,9 +39,9 @@ LOOKBACK    = 500           # velas que pido para calcular el SAR (sobra para co
 POLL_SEC    = 300           # reviso cada 5 min; solo actuo sobre vela CERRADA
 RECV_WINDOW = 60000
 BUY_BUFFER  = 0.999         # al comprar gasto 99.9% del BTC (deja aire p/ redondeo)
-ALLOC_DEFAULT = 0.023       # TOPE de BTC que opera este bot (deja lugar para el bot de RENDER)
+ALLOC_DEFAULT = 0.01        # TOPE de BTC (plata chica para testear RENDER en REAL)
                             # Para agregar/sacar plata SIN tocar codigo:
-                            #   echo "0.03" > /root/bot/alloc_NEARBTC.txt   (y reinicia el servicio)
+                            #   echo "0.02" > /root/bot/alloc_RENDERBTC.txt   (y reinicia el servicio)
 
 DRY_RUN     = False         # arreglo de precision aplicado; va directo a real
 
@@ -49,7 +49,7 @@ BASE_URL    = "https://api.binance.com"
 DIR         = "/root/bot"
 LOG_FILE    = f"{DIR}/v2_{SYMBOL}_log.txt"
 KEYS_FILE   = f"{DIR}/keys.json"      # {"key":"...","secret":"..."}  (chmod 600)
-HALT_FILE   = f"{DIR}/v2_HALT.flag"   # si existe, el bot no opera (freno de mano)
+HALT_FILE   = f"{DIR}/v2_{SYMBOL}_HALT.flag" # propio de RENDER (no comparte con NEAR)
 ALLOC_FILE  = f"{DIR}/alloc_{SYMBOL}.txt"  # si existe, su numero pisa ALLOC_DEFAULT (agregar plata facil)
 
 # ----------------------------- LOG -----------------------------------------
