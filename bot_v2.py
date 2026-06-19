@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ============================================================================
-#  bot_v2.py  -  Bot de tendencia SAR, NEAR/BTC, velas 4h, largo-solo-en-verde
+#  bot_v2.py  -  Bot de tendencia COMBO (SAR + Supertrend), NEAR/BTC, velas 4h
+#               largo SOLO si SAR verde Y Supertrend verde; si no, refugio en BTC
 # ----------------------------------------------------------------------------
 #  Reescrito desde cero con las correcciones que sacamos del bug del bot viejo:
 #
@@ -33,6 +34,7 @@ BASE_ASSET  = "NEAR"        # lo que tengo cuando estoy LARGO
 QUOTE_ASSET = "BTC"         # lo que tengo cuando estoy en refugio
 INTERVAL    = "4h"
 AF_STEP, AF_MAX = 0.02, 0.2 # SAR(0.02, 0.2) - igual que el backtest
+ST_ATR_LEN, ST_MULT = 10, 3.0  # Supertrend(10,3) - filtro: largo solo si SAR verde Y ST verde
 LOOKBACK    = 500           # velas que pido para calcular el SAR (sobra para converger)
 POLL_SEC    = 300           # reviso cada 5 min; solo actuo sobre vela CERRADA
 RECV_WINDOW = 60000
@@ -148,6 +150,34 @@ def psar(H, L, step=AF_STEP, mx=AF_MAX):
         sar = s; up[i] = tr
     return up
 
+def supertrend_green(H, L, C, atr_len=ST_ATR_LEN, mult=ST_MULT):
+    # Supertrend(10,3) en Python puro (sin numpy/pandas), mismo calculo que tus
+    # tableros: ATR de Wilder (alpha=1/atr_len). Devuelve lista bool (True = VERDE).
+    n = len(C)
+    if n == 0:
+        return []
+    tr = [H[0] - L[0]] + [0.0] * (n - 1)
+    for i in range(1, n):
+        tr[i] = max(H[i] - L[i], abs(H[i] - C[i-1]), abs(L[i] - C[i-1]))
+    a = 1.0 / atr_len
+    atr = [tr[0]] + [0.0] * (n - 1)
+    for i in range(1, n):
+        atr[i] = a * tr[i] + (1 - a) * atr[i-1]
+    fu = [0.0] * n; fl = [0.0] * n; bull = [True] * n
+    hl2 = (H[0] + L[0]) / 2.0
+    fu[0] = hl2 + mult * atr[0]; fl[0] = hl2 - mult * atr[0]
+    for i in range(1, n):
+        hl2 = (H[i] + L[i]) / 2.0
+        u  = hl2 + mult * atr[i]
+        lo = hl2 - mult * atr[i]
+        fu[i] = u  if (u  < fu[i-1] or C[i-1] > fu[i-1]) else fu[i-1]
+        fl[i] = lo if (lo > fl[i-1] or C[i-1] < fl[i-1]) else fl[i-1]
+        if bull[i-1]:
+            bull[i] = False if C[i] < fl[i] else True
+        else:
+            bull[i] = True if C[i] > fu[i] else False
+    return bull
+
 # --------------------------- DECISION (testeable) --------------------------
 def decide(green_now, holding_near, btc_enough):
     """green_now: bool (SAR de la ultima vela CERRADA).
@@ -238,7 +268,8 @@ def main():
     sync_time()
     load_filters()
     log(f"=== bot_v2 arrancado | DRY_RUN={DRY_RUN} | {SYMBOL} {INTERVAL} | "
-        f"SAR({AF_STEP},{AF_MAX}) | step={FILT['step']} minNotional={FILT['minNotional']} ===")
+        f"COMBO SAR({AF_STEP},{AF_MAX})+ST({ST_ATR_LEN},{ST_MULT}) | "
+        f"step={FILT['step']} minNotional={FILT['minNotional']} ===")
 
     last_seen_close = None
     while True:
@@ -249,8 +280,9 @@ def main():
 
             sync_time()
             H, L, C = get_closed_klines()
-            up = psar(H, L)
-            green_now = up[-1]                      # senal CONFIRMADA (ultima vela cerrada)
+            sar_green = psar(H, L)[-1]                  # SAR de la ultima vela CERRADA
+            st_green  = supertrend_green(H, L, C)[-1]   # Supertrend de la ultima vela CERRADA
+            green_now = sar_green and st_green          # COMBO: largo SOLO si los dos verdes
 
             price = last_price()
             bal = get_balances()
@@ -266,7 +298,7 @@ def main():
                 estado = "LARGO(NEAR)" if holding_near else ("BTC" if btc_enough else "vacio")
                 log(f"vela cerrada | SAR={'VERDE' if green_now else 'ROJO'} | "
                     f"tengo {estado} (NEAR={near:.2f} ~{near_val_btc:.6f}BTC, BTC={btc:.8f}) | "
-                    f"accion={action}")
+                    f"accion={action} | det[SAR={'V' if sar_green else 'R'} ST={'V' if st_green else 'R'}]")
                 last_seen_close = C[-1]
 
             if action == "SELL":
