@@ -79,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
 PAGE = r"""<!DOCTYPE html>
 <html lang="es"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Panel SAR · NEAR/BTC</title>
+<title>Panel COMBO · NEAR/BTC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -153,6 +153,7 @@ td.t{color:var(--dim);font-size:11px}
 .meter{display:flex;flex-direction:column;gap:5px}
 .meter .lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--dim)}
 .meter .lbl em{font-style:normal}.meter .lbl .flip{color:var(--gold)}
+.meter .lbl em.cg{color:var(--green)}.meter .lbl em.cr{color:var(--red)}
 .bar{height:6px;border-radius:4px;background:#0a141d;overflow:hidden}
 .bar i{display:block;height:100%;border-radius:4px;transition:width .5s ease}
 .bar i.green{background:linear-gradient(90deg,var(--green-deep),var(--green))}
@@ -164,7 +165,7 @@ td.t{color:var(--dim);font-size:11px}
 </style></head>
 <body><div class="wrap">
   <header>
-    <div><div class="pair">NEAR<small> / btc</small></div><div class="sub">panel sar · 0.02 / 0.2</div></div>
+    <div><div class="pair">NEAR<small> / btc</small></div><div class="sub">combo · sar 0.02/0.2 + supertrend 10/3</div></div>
     <div class="updated" id="updated">conectando…</div>
   </header>
 
@@ -185,21 +186,20 @@ td.t{color:var(--dim);font-size:11px}
   <div class="section-h">trades confirmados</div>
   <div id="tradesBox"></div>
 
-  <div class="section-h">escalera sar · contexto</div>
+  <div class="section-h">escalera combo · sar + supertrend</div>
   <div class="ladder" id="ladder"></div>
   <div class="err" id="err"></div>
 
   <div class="rule">
-    <b>Cómo opera.</b> Solo tiene NEAR mientras el <b>4H está en <span class="g">verde</span></b>.
-    Cuando gira a <span class="r">rojo</span>, vende y vuelve a BTC, y ahí espera — no opera en rojo, es refugio.
-    Es <b>largo solo en verde</b>: la venta en rojo es la salida, no una operación nueva.<br>
-    Los marcos lentos (6H→1D) son contexto: si el 4H gira pero abajo siguen firmes, suele ser sacudón, no reversa.
-    Todo sobre la <b>vela cerrada</b> (lo mismo que mira el bot).
+    <b>Cómo opera.</b> Solo tiene NEAR cuando en el <b>4H están en <span class="g">verde</span> los dos: SAR y Supertrend</b>.
+    Si cualquiera de los dos gira a <span class="r">rojo</span>, vende y vuelve a BTC, y ahí espera — no opera en rojo, es refugio.
+    Por eso podés ver el SAR verde pero el chip en <span class="r">ROJO</span>: si el Supertrend está rojo, el combo manda y el bot está en BTC.<br>
+    Los marcos lentos (6H→1D) son contexto. Todo sobre la <b>vela cerrada</b> (lo mismo que mira el bot).
   </div>
 </div>
 
 <script>
-const PAIR="NEARBTC", STEP=0.02, MX=0.2, GAUGE_MAX=8;
+const PAIR="NEARBTC", STEP=0.02, MX=0.2, GAUGE_MAX=8, ST_LEN=10, ST_MULT=3.0;
 const TFS=[{tf:"4h",bind:true},{tf:"6h"},{tf:"8h"},{tf:"12h"},{tf:"1d"}];
 
 function psar(H,L,step,mx){
@@ -213,6 +213,23 @@ function psar(H,L,step,mx){
     sar=s;up[i]=tr;sa[i]=sar;}
   return {up,sa};
 }
+function supertrend(H,L,C,atrLen,mult){
+  const n=C.length,bull=new Array(n).fill(true);
+  if(n===0)return bull;
+  const tr=new Array(n).fill(0);tr[0]=H[0]-L[0];
+  for(let i=1;i<n;i++)tr[i]=Math.max(H[i]-L[i],Math.abs(H[i]-C[i-1]),Math.abs(L[i]-C[i-1]));
+  const a=1/atrLen,atr=new Array(n).fill(0);atr[0]=tr[0];
+  for(let i=1;i<n;i++)atr[i]=a*tr[i]+(1-a)*atr[i-1];
+  const fu=new Array(n).fill(0),fl=new Array(n).fill(0);
+  let hl2=(H[0]+L[0])/2;fu[0]=hl2+mult*atr[0];fl[0]=hl2-mult*atr[0];
+  for(let i=1;i<n;i++){
+    hl2=(H[i]+L[i])/2;const u=hl2+mult*atr[i],lo=hl2-mult*atr[i];
+    fu[i]=(u<fu[i-1]||C[i-1]>fu[i-1])?u:fu[i-1];
+    fl[i]=(lo>fl[i-1]||C[i-1]<fl[i-1])?lo:fl[i-1];
+    bull[i]=bull[i-1]?(C[i]<fl[i]?false:true):(C[i]>fu[i]?true:false);
+  }
+  return bull;
+}
 async function klines(tf){
   const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${PAIR}&interval=${tf}&limit=400`);
   if(!r.ok) throw new Error("HTTP "+r.status); return r.json();
@@ -221,8 +238,14 @@ function analyze(raw){
   const conf=raw.slice(0,-1);
   const H=conf.map(k=>+k[2]),L=conf.map(k=>+k[3]),C=conf.map(k=>+k[4]);
   const r=psar(H,L,STEP,MX),i=r.up.length-1;
-  const Hf=raw.map(k=>+k[2]),Lf=raw.map(k=>+k[3]),rf=psar(Hf,Lf,STEP,MX);
-  return {upConf:r.up[i],sarConf:r.sa[i],closeConf:C[i],upProv:rf.up[rf.up.length-1]};
+  const st=supertrend(H,L,C,ST_LEN,ST_MULT);
+  const sarBull=r.up[i], stBull=st[st.length-1];
+  const Hf=raw.map(k=>+k[2]),Lf=raw.map(k=>+k[3]),Cf=raw.map(k=>+k[4]);
+  const rf=psar(Hf,Lf,STEP,MX), stf=supertrend(Hf,Lf,Cf,ST_LEN,ST_MULT);
+  const sarProv=rf.up[rf.up.length-1], stProv=stf[stf.length-1];
+  // upConf/upProv = COMBO (lo que realmente define al bot). sarBull/stBull = desglose.
+  return {upConf:sarBull&&stBull, upProv:sarProv&&stProv,
+          sarBull, stBull, sarConf:r.sa[i], closeConf:C[i]};
 }
 const fmtPx=p=>p.toFixed(8).replace(/0+$/,"").replace(/\.$/,".0");
 const fmtBtc=b=>b.toFixed(8);
@@ -239,8 +262,8 @@ async function ladder(){
   }
   const banner=document.getElementById("banner"),bs=document.getElementById("bannerState"),bn=document.getElementById("bannerNote");
   if(four){
-    if(four.upConf){banner.className="banner green";bs.textContent="EL BOT EN NEAR";bn.textContent="4H en verde · largo, montado a la tendencia";}
-    else{banner.className="banner red";bs.textContent="EL BOT EN BTC";bn.textContent="4H en rojo · refugio en BTC, fuera de NEAR";}
+    if(four.upConf){banner.className="banner green";bs.textContent="EL BOT EN NEAR";bn.textContent="4H combo en verde (SAR + Supertrend) · largo, montado a la tendencia";}
+    else{banner.className="banner red";bs.textContent="EL BOT EN BTC";bn.textContent=`4H · SAR ${four.sarBull?'verde':'rojo'} · Supertrend ${four.stBull?'verde':'rojo'} → refugio en BTC, fuera de NEAR`;}
     if(four.upProv!==four.upConf)bn.textContent+=` · ⟳ la vela 4H en curso ya está en ${four.upProv?"VERDE":"ROJO"}`;
   }
   const lad=document.getElementById("ladder");lad.innerHTML="";
@@ -248,11 +271,12 @@ async function ladder(){
     const div=document.createElement("div");div.className="rung"+(row.bind?" bind":"");
     const crown=row.bind?'<span class="crown">4h · manda</span>':'';
     if(!row.ok){div.innerHTML=`<div class="tf">${row.tf.toUpperCase()}${crown}</div><div class="chip na">s/d</div><div class="meter"><div class="lbl"><em>sin datos</em></div><div class="bar"></div></div>`;lad.appendChild(div);continue;}
-    const g=row.upConf,pct=Math.abs(price-row.sarConf)/price*100,w=Math.max(3,Math.min(pct/GAUGE_MAX,1)*100),thin=pct<1;
-    const lbl=g?`colchón <em>${pct.toFixed(2)}%</em>`:`a verde <em>${pct.toFixed(2)}%</em>`;
+    const g=row.upConf,pct=Math.abs(price-row.sarConf)/price*100,w=Math.max(3,Math.min(pct/GAUGE_MAX,1)*100);
+    const lbl=`SAR <em class="${row.sarBull?'cg':'cr'}">${row.sarBull?'verde':'rojo'}</em> · ST <em class="${row.stBull?'cg':'cr'}">${row.stBull?'verde':'rojo'}</em>`;
     let flip=""; if(row.upProv!==row.upConf)flip=`<span class="flip">⟳ en curso ${row.upProv?'verde':'rojo'}</span>`;
+    const right=flip||`<span>SAR ${row.sarBull?'colchón':'a verde'} ${pct.toFixed(1)}%</span>`;
     div.innerHTML=`<div class="tf">${row.tf.toUpperCase()}${crown}</div><div class="chip ${g?'green':'red'}">${g?'VERDE':'ROJO'}</div>
-      <div class="meter"><div class="lbl"><span class="${thin?'thin':''}">${lbl}</span>${flip}</div>
+      <div class="meter"><div class="lbl"><span>${lbl}</span>${right}</div>
       <div class="bar"><i class="${g?'green':'red'}" style="width:${w}%"></i></div></div>`;
     lad.appendChild(div);
   }
