@@ -151,7 +151,7 @@ td.t{color:var(--dim);font-size:11px}
 .chip{font-size:12px;font-weight:700;letter-spacing:.06em;padding:5px 0;text-align:center;border-radius:6px}
 .chip.green{color:var(--green);background:rgba(52,210,123,.12)}.chip.red{color:var(--red);background:rgba(255,93,87,.11)}.chip.na{color:var(--faint);background:#0b141d}
 .meter{display:flex;flex-direction:column;gap:5px}
-.meter .lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--dim)}
+.meter .lbl{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--dim)}
 .meter .lbl em{font-style:normal}.meter .lbl .flip{color:var(--gold)}
 .meter .lbl em.cg{color:var(--green)}.meter .lbl em.cr{color:var(--red)}
 .bar{height:6px;border-radius:4px;background:#0a141d;overflow:hidden}
@@ -214,21 +214,22 @@ function psar(H,L,step,mx){
   return {up,sa};
 }
 function supertrend(H,L,C,atrLen,mult){
-  const n=C.length,bull=new Array(n).fill(true);
-  if(n===0)return bull;
+  const n=C.length,bull=new Array(n).fill(true),line=new Array(n).fill(0);
+  if(n===0)return {bull,line};
   const tr=new Array(n).fill(0);tr[0]=H[0]-L[0];
   for(let i=1;i<n;i++)tr[i]=Math.max(H[i]-L[i],Math.abs(H[i]-C[i-1]),Math.abs(L[i]-C[i-1]));
   const a=1/atrLen,atr=new Array(n).fill(0);atr[0]=tr[0];
   for(let i=1;i<n;i++)atr[i]=a*tr[i]+(1-a)*atr[i-1];
   const fu=new Array(n).fill(0),fl=new Array(n).fill(0);
-  let hl2=(H[0]+L[0])/2;fu[0]=hl2+mult*atr[0];fl[0]=hl2-mult*atr[0];
+  let hl2=(H[0]+L[0])/2;fu[0]=hl2+mult*atr[0];fl[0]=hl2-mult*atr[0];line[0]=bull[0]?fl[0]:fu[0];
   for(let i=1;i<n;i++){
     hl2=(H[i]+L[i])/2;const u=hl2+mult*atr[i],lo=hl2-mult*atr[i];
     fu[i]=(u<fu[i-1]||C[i-1]>fu[i-1])?u:fu[i-1];
     fl[i]=(lo>fl[i-1]||C[i-1]<fl[i-1])?lo:fl[i-1];
     bull[i]=bull[i-1]?(C[i]<fl[i]?false:true):(C[i]>fu[i]?true:false);
+    line[i]=bull[i]?fl[i]:fu[i];
   }
-  return bull;
+  return {bull,line};
 }
 async function klines(tf){
   const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${PAIR}&interval=${tf}&limit=400`);
@@ -239,13 +240,13 @@ function analyze(raw){
   const H=conf.map(k=>+k[2]),L=conf.map(k=>+k[3]),C=conf.map(k=>+k[4]);
   const r=psar(H,L,STEP,MX),i=r.up.length-1;
   const st=supertrend(H,L,C,ST_LEN,ST_MULT);
-  const sarBull=r.up[i], stBull=st[st.length-1];
+  const sarBull=r.up[i], stBull=st.bull[st.bull.length-1], stLine=st.line[st.line.length-1];
   const Hf=raw.map(k=>+k[2]),Lf=raw.map(k=>+k[3]),Cf=raw.map(k=>+k[4]);
   const rf=psar(Hf,Lf,STEP,MX), stf=supertrend(Hf,Lf,Cf,ST_LEN,ST_MULT);
-  const sarProv=rf.up[rf.up.length-1], stProv=stf[stf.length-1];
+  const sarProv=rf.up[rf.up.length-1], stProv=stf.bull[stf.bull.length-1];
   // upConf/upProv = COMBO (lo que realmente define al bot). sarBull/stBull = desglose.
   return {upConf:sarBull&&stBull, upProv:sarProv&&stProv,
-          sarBull, stBull, sarConf:r.sa[i], closeConf:C[i]};
+          sarBull, stBull, sarConf:r.sa[i], stLine, closeConf:C[i]};
 }
 const fmtPx=p=>p.toFixed(8).replace(/0+$/,"").replace(/\.$/,".0");
 const fmtBtc=b=>b.toFixed(8);
@@ -271,12 +272,13 @@ async function ladder(){
     const div=document.createElement("div");div.className="rung"+(row.bind?" bind":"");
     const crown=row.bind?'<span class="crown">4h · manda</span>':'';
     if(!row.ok){div.innerHTML=`<div class="tf">${row.tf.toUpperCase()}${crown}</div><div class="chip na">s/d</div><div class="meter"><div class="lbl"><em>sin datos</em></div><div class="bar"></div></div>`;lad.appendChild(div);continue;}
-    const g=row.upConf,pct=Math.abs(price-row.sarConf)/price*100,w=Math.max(3,Math.min(pct/GAUGE_MAX,1)*100);
-    const lbl=`SAR <em class="${row.sarBull?'cg':'cr'}">${row.sarBull?'verde':'rojo'}</em> · ST <em class="${row.stBull?'cg':'cr'}">${row.stBull?'verde':'rojo'}</em>`;
-    let flip=""; if(row.upProv!==row.upConf)flip=`<span class="flip">⟳ en curso ${row.upProv?'verde':'rojo'}</span>`;
-    const right=flip||`<span>SAR ${row.sarBull?'colchón':'a verde'} ${pct.toFixed(1)}%</span>`;
+    const g=row.upConf;
+    const sarPct=Math.abs(price-row.sarConf)/price*100, stPct=Math.abs(price-row.stLine)/price*100;
+    const w=Math.max(3,Math.min(sarPct/GAUGE_MAX,1)*100);
+    const sarTxt=`SAR <em class="${row.sarBull?'cg':'cr'}">${row.sarBull?'verde':'rojo'}</em> <em>${row.sarBull?'colchón':'a verde'} ${sarPct.toFixed(1)}%</em>`;
+    const stTxt=`ST <em class="${row.stBull?'cg':'cr'}">${row.stBull?'verde':'rojo'}</em> <em>${row.stBull?'colchón':'a verde'} ${stPct.toFixed(1)}%</em>`;
     div.innerHTML=`<div class="tf">${row.tf.toUpperCase()}${crown}</div><div class="chip ${g?'green':'red'}">${g?'VERDE':'ROJO'}</div>
-      <div class="meter"><div class="lbl"><span>${lbl}</span>${right}</div>
+      <div class="meter"><div class="lbl"><span>${sarTxt}</span><span>${stTxt}</span></div>
       <div class="bar"><i class="${g?'green':'red'}" style="width:${w}%"></i></div></div>`;
     lad.appendChild(div);
   }
