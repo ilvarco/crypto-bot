@@ -328,9 +328,9 @@ def main():
 
             # log de estado una vez por vela nueva (para no spammear cada 5 min)
             if last_seen_close != C[-1]:
-                estado = "LARGO(NEAR)" if holding_near else ("BTC" if btc_enough else "vacio")
+                estado = f"LARGO({BASE_ASSET})" if holding_near else ("BTC" if btc_enough else "vacio")
                 log(f"vela cerrada | SAR={'VERDE' if green_now else 'ROJO'} | "
-                    f"tengo {estado} (NEAR={near:.2f} ~{near_val_btc:.6f}BTC, BTC={btc:.8f}) | "
+                    f"tengo {estado} ({BASE_ASSET}={near:.2f} ~{near_val_btc:.6f}BTC, BTC={btc:.8f}) | "
                     f"accion={action} | det[SAR={'V' if sar_green else 'R'} ST={'V' if st_green else 'R'}]")
                 last_seen_close = C[-1]
 
