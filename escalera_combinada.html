@@ -362,22 +362,32 @@ async function fetchTrades(){
 
 function fmtBtc(x){ return (x>=0?'+':'')+x.toFixed(8); }
 function coinPrice(name){ const c=COINS.find(x=>x.name===name); return (c&&c.t)?+c.t.lastPrice:null; }
+function coinCol(name){ return name==='NEAR'?'var(--marea)':(name==='RENDER'?'var(--ambar)':'#5a7884'); }
 
-function accumChart(accum){
-  const pts=[{i:0,cum:0}].concat(accum.map((a,k)=>({i:k+1,cum:a.cum})));
-  const W=600,H=170,pad=44;
-  const xmax=Math.max(1,pts.length-1);
-  const ys=pts.map(p=>p.cum);
-  let ymin=Math.min(0,...ys), ymax=Math.max(0,...ys);
+function accumChart(trips){
+  // tres acumulados sobre la secuencia de trades: total, NEAR, RENDER
+  let tot=0, near=0, rend=0;
+  const T=[{i:0,v:0}], N=[{i:0,v:0}], R=[{i:0,v:0}];
+  trips.forEach((t,k)=>{
+    tot+=t.res_btc;
+    if(t.coin==='NEAR') near+=t.res_btc; else if(t.coin==='RENDER') rend+=t.res_btc;
+    T.push({i:k+1,v:tot}); N.push({i:k+1,v:near}); R.push({i:k+1,v:rend});
+  });
+  const W=600,H=180,pad=46;
+  const xmax=Math.max(1,trips.length);
+  const all=[...T,...N,...R].map(p=>p.v);
+  let ymin=Math.min(0,...all), ymax=Math.max(0,...all);
   if(ymin===ymax){ymin-=0.0001;ymax+=0.0001;}
   const X=i=>pad+(i/xmax)*(W-pad-12);
   const Y=v=>H-26-((v-ymin)/(ymax-ymin))*(H-46);
-  const line=pts.map(p=>`${X(p.i).toFixed(1)},${Y(p.cum).toFixed(1)}`).join(' ');
-  const last=pts[pts.length-1].cum, col=last>=0?'var(--verde)':'var(--rojo)', zY=Y(0);
+  const zY=Y(0);
+  const poly=(arr,col,w)=>`<polyline points="${arr.map(p=>X(p.i).toFixed(1)+','+Y(p.v).toFixed(1)).join(' ')}" fill="none" stroke="${col}" stroke-width="${w}"/>`;
+  const dots=(arr,col)=>arr.slice(1).map(p=>`<circle cx="${X(p.i).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="2.5" fill="${col}"/>`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">
     <line x1="${pad}" y1="${zY.toFixed(1)}" x2="${W-12}" y2="${zY.toFixed(1)}" stroke="var(--line2)" stroke-dasharray="3 3"/>
-    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="2"/>
-    ${pts.map(p=>`<circle cx="${X(p.i).toFixed(1)}" cy="${Y(p.cum).toFixed(1)}" r="2.6" fill="${col}"/>`).join('')}
+    ${poly(N,'var(--marea)',1.4)}${dots(N,'var(--marea)')}
+    ${poly(R,'var(--ambar)',1.4)}${dots(R,'var(--ambar)')}
+    ${poly(T,'#a4b8bd',2.6)}${dots(T,'#a4b8bd')}
     <text x="${pad-6}" y="${(Y(ymax)+4).toFixed(1)}" text-anchor="end" font-size="9" fill="#80979e" font-family="monospace">${fmtBtc(ymax)}</text>
     <text x="${pad-6}" y="${(zY+3).toFixed(1)}" text-anchor="end" font-size="9" fill="#516870" font-family="monospace">0</text>
     <text x="${pad-6}" y="${(Y(ymin)).toFixed(1)}" text-anchor="end" font-size="9" fill="#80979e" font-family="monospace">${fmtBtc(ymin)}</text>
@@ -394,22 +404,31 @@ function renderTrades(){
     return;
   }
   const losses=(TRADES.n||0)-(TRADES.wins||0), tot=TRADES.total_btc||0;
+  const per=TRADES.per||{};
+  let perHtml='';
+  ['NEAR','RENDER'].forEach(cn=>{
+    if(per[cn] && per[cn].n>0){
+      const v=per[cn].total_btc||0;
+      perHtml+=`<span style="color:${coinCol(cn)}">●</span> ${cn} <b class="${v>=0?'up':'down'}">${fmtBtc(v)}</b> <span style="color:var(--faint)">(${per[cn].n})</span>&nbsp;&nbsp;&nbsp;`;
+    }
+  });
   const sum=`<div class="accum-sum">
-    <span>acumulado <b class="big ${tot>=0?'up':'down'}">${fmtBtc(tot)} BTC</b></span>
+    <span>acumulado total <b class="big ${tot>=0?'up':'down'}">${fmtBtc(tot)} BTC</b></span>
     <span><b>${TRADES.n||0}</b> cerrados</span>
     <span><b style="color:var(--verde)">${TRADES.wins||0}</b> ganados · <b style="color:var(--rojo)">${losses}</b> perdidos</span>
-  </div>`;
-  const chart = closed.length>0 ? `<div class="chartbox">${accumChart(TRADES.accum||[])}</div>` : '';
+  </div>`+(perHtml?`<div class="accum-sum" style="font-size:12px;margin-top:-8px;margin-bottom:12px"><span style="color:var(--faint)">por par:</span> ${perHtml}</div>`:'');
+  const legend = closed.length>0 ? `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:6px"><span style="color:#a4b8bd">●</span> total&nbsp;&nbsp;<span style="color:var(--marea)">●</span> NEAR&nbsp;&nbsp;<span style="color:var(--ambar)">●</span> RENDER&nbsp;&nbsp;<span style="color:var(--faint)">— acumulación de BTC</span></div>` : '';
+  const chart = closed.length>0 ? `${legend}<div class="chartbox">${accumChart(TRADES.trips||[])}</div>` : '';
   let rows='';
   opens.forEach(o=>{
     const px=coinPrice(o.coin); let live='en curso';
     if(px && o.entry){ const p=(px/o.entry-1)*100; live=`<span class="${p>=0?'up':'down'}">${p>=0?'+':''}${p.toFixed(2)}%</span> <span style="font-size:9px;color:var(--marea)">abierta</span>`; }
-    rows+=`<div class="trow open"><span class="tcoin">${o.coin}<span class="tbadge">abierta</span></span>`+
+    rows+=`<div class="trow open"><span class="tcoin" style="color:${coinCol(o.coin)}">${o.coin}<span class="tbadge">abierta</span></span>`+
           `<span class="tpx">entró ${o.entry.toFixed(8)}</span><span class="tres">${live}</span></div>`;
   });
   closed.slice().reverse().forEach(t=>{
     const c=t.res_btc>=0?'up':'down';
-    rows+=`<div class="trow"><span class="tcoin">${t.coin}</span>`+
+    rows+=`<div class="trow"><span class="tcoin" style="color:${coinCol(t.coin)}">${t.coin}</span>`+
           `<span class="tpx">${t.entry.toFixed(8)} → ${t.exit.toFixed(8)} <span style="opacity:.55">${(t.close_ts||'').slice(5,16)}</span></span>`+
           `<span class="tres ${c}">${t.res_pct>=0?'+':''}${t.res_pct.toFixed(2)}%<br><span style="font-size:10px;font-weight:500">${fmtBtc(t.res_btc)}</span></span></div>`;
   });

@@ -123,18 +123,21 @@ def round_trips(evs, coin):
     return trips, op
 
 def trades_payload():
-    trips=[]; opens=[]
+    trips=[]; opens=[]; per={}
     for sym, name, svc, haltf in BOTS:
         t,o = round_trips(parse_trades(f"{DIR}/v2_{sym}_log.txt", name), name)
         trips += t
         if o: opens.append(o)
+        per[name]={"total_btc":sum(x["res_btc"] for x in t),
+                   "n":len(t),
+                   "wins":sum(1 for x in t if x["res_btc"]>0)}
     trips.sort(key=lambda x:x["close_ts"])
     cum=0.0; accum=[]; wins=0
     for t in trips:
         cum += t["res_btc"]
         if t["res_btc"]>0: wins+=1
-        accum.append({"ts":t["close_ts"],"cum":cum})
-    return {"trips":trips,"open":opens,"accum":accum,
+        accum.append({"ts":t["close_ts"],"cum":cum,"coin":t["coin"]})
+    return {"trips":trips,"open":opens,"accum":accum,"per":per,
             "total_btc":cum,"n":len(trips),"wins":wins}
 
 class H(BaseHTTPRequestHandler):
