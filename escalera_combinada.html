@@ -80,6 +80,11 @@
   .real .pnl.up{color:var(--verde)} .real .pnl.down{color:var(--rojo)}
   .real-warn{margin-top:6px;color:var(--ambar);font-size:11.5px;font-family:var(--sans);
     background:rgba(217,164,65,.07);border:1px solid rgba(217,164,65,.22);border-radius:8px;padding:6px 10px}
+  .real-warn.bad{color:var(--rojo);background:rgba(223,128,120,.09);border-color:var(--rojo-edge);font-weight:600}
+  .health{font-family:var(--mono);font-size:10px;letter-spacing:.05em;padding:2px 8px;border-radius:20px;
+    border:1px solid;margin-left:9px;white-space:nowrap;vertical-align:middle}
+  .health.ok{color:var(--verde);border-color:var(--verde-edge);background:var(--verde-dim)}
+  .health.bad{color:var(--rojo);border-color:var(--rojo-edge);background:var(--rojo-dim)}
 
   /* escalera */
   .ladder{padding:8px 12px 14px}
@@ -138,6 +143,7 @@
     </div>
     <div>El <b>combo de 4H</b> (peldaño con ⚓) es el que operan los bots: entran solo si SAR <i>y</i> Supertrend están verdes. Los peldaños de arriba muestran la marea más grande, de contexto.</div>
     <div>La tira <b>bot real</b> muestra lo que el bot tiene de verdad (leído de su log): si está largo, a qué precio entró y el P&L en vivo. Cuando la <b>señal</b> y el <b>bot real</b> no coinciden, es porque el bot todavía no ejecutó — actúa en su próximo chequeo (~5 min).</div>
+    <div>El indicador al lado de cada moneda muestra la salud del bot: <b style="color:var(--verde)">● operando</b> (servicio vivo, sin freno), <b style="color:var(--rojo)">⛔ frenado</b> (freno de mano activo) o <b style="color:var(--rojo)">⛔ caído</b> (el servicio no corre). Si ves rojo, el bot no está operando y hay que revisar el server.</div>
     <div>Se calcula sobre <b>vela cerrada</b> (se descarta la vela en curso), igual que los bots. Los % son orientativos: el giro real ocurre cuando el precio cruza la línea al cierre.</div>
   </footer>
 </div>
@@ -272,6 +278,20 @@ function renderCoin(c){
     else if(!r4.combo && est.pos==='LARGO') warnHtml=`<div class="real-warn">⚠ la señal giró a rojo — el bot vende en el próximo chequeo (~5 min)</div>`;
   }
 
+  // salud del bot: vivo / frenado / caído
+  let healthBadge='', healthWarn='';
+  if(est){
+    if(est.halted){
+      healthBadge=`<span class="health bad">⛔ frenado</span>`;
+      healthWarn=`<div class="real-warn bad">⛔ El bot está FRENADO (freno de mano) — no está operando. Revisá el log y borrá el .flag cuando lo resuelvas.</div>`;
+    } else if(est.svc==='active'){
+      healthBadge=`<span class="health ok">● operando</span>`;
+    } else if(est.svc && est.svc!=='unknown'){
+      healthBadge=`<span class="health bad">⛔ caído</span>`;
+      healthWarn=`<div class="real-warn bad">⛔ El servicio del bot no está corriendo (${est.svc}) — no está operando. Reiniciá el servicio en el server.</div>`;
+    }
+  }
+
   let price='—',chg='';
   if(c.t){
     price=(+c.t.lastPrice).toFixed(8)+' BTC';
@@ -282,7 +302,7 @@ function renderCoin(c){
   return `<section class="coin">
     <div class="coin-head">
       <div class="coin-top">
-        <div class="coin-name">${c.name} <small>/ BTC</small></div>
+        <div class="coin-name">${c.name} <small>/ BTC</small>${healthBadge}</div>
         <div class="coin-price">${price}${chg}</div>
       </div>
       <div class="marea ${mClass}">
@@ -293,7 +313,7 @@ function renderCoin(c){
           <div class="marea-note">${mNote}</div>
         </div>
       </div>
-      ${realHtml}${warnHtml}
+      ${realHtml}${healthWarn}${warnHtml}
     </div>
     <div class="ladder">
       <div class="col-h"><span>TF</span><span>SAR</span><span>Supertrend</span><span>combo</span></div>

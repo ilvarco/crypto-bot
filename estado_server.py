@@ -4,12 +4,15 @@
 #  estado_server.py - sirve el estado REAL de los bots (leido de los logs) como
 #  JSON, y tambien sirve la escalera. Puerto 8001. Solo lectura, no toca plata.
 # ============================================================================
-import re, json, os
+import re, json, os, subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DIR  = "/root/bot"
 PORT = 8001
-BOTS = [("NEARBTC","NEAR"), ("RENDERBTC","RENDER")]
+BOTS = [
+    ("NEARBTC",   "NEAR",   "bot_v2",        "v2_HALT.flag"),
+    ("RENDERBTC", "RENDER", "bot_v2_render", "v2_RENDERBTC_HALT.flag"),
+]
 PAGE = f"{DIR}/escalera_combinada.html"
 
 RE_BUY  = re.compile(r"OK COMPRA confirmada: BTC ([\d.]+)->([\d.]+) \| (\w+) ([\d.]+)->([\d.]+)")
@@ -53,10 +56,22 @@ def parse_log(path):
             st["btc"] = float(last_sell.group(5))
     return st
 
+def svc_active(svc):
+    try:
+        r = subprocess.run(["systemctl","is-active",svc],
+                           capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
 def estado():
     out = {}
-    for sym, name in BOTS:
-        out[sym] = parse_log(f"{DIR}/v2_{sym}_log.txt")
+    for sym, name, svc, haltf in BOTS:
+        st = parse_log(f"{DIR}/v2_{sym}_log.txt")
+        st["svc"]    = svc_active(svc)
+        st["alive"]  = (st["svc"] == "active")
+        st["halted"] = os.path.exists(f"{DIR}/{haltf}")
+        out[sym] = st
     return out
 
 class H(BaseHTTPRequestHandler):
