@@ -18,6 +18,7 @@ PAGE = f"{DIR}/escalera_combinada.html"
 RE_BUY  = re.compile(r"OK COMPRA confirmada: BTC ([\d.]+)->([\d.]+) \| (\w+) ([\d.]+)->([\d.]+)")
 RE_SELL = re.compile(r"OK VENTA confirmada: (\w+) ([\d.]+)->([\d.]+) \| BTC ([\d.]+)->([\d.]+)")
 RE_VELA = re.compile(r"vela cerrada \| SAR=(\w+) \| tengo (\S+) \(.*BTC=([\d.]+)\) \| accion=(\w+) \| det\[SAR=(\w) ST=(\w)\]")
+RE_TS   = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 def parse_log(path):
     try:
@@ -74,6 +75,68 @@ def estado():
         out[sym] = st
     return out
 
+def parse_trades(path, coin):
+    # extrae todas las compras y ventas confirmadas del log, en orden
+    try:
+        with open(path) as f:
+            lines = f.readlines()
+    except Exception:
+        return []
+    evs = []
+    for ln in lines:
+        m = RE_TS.match(ln); ts = m.group(1) if m else ""
+        mb = RE_BUY.search(ln)
+        if mb:
+            a,b,_,c,d = mb.groups()
+            a,b,c,d = float(a),float(b),float(c),float(d)
+            spent=a-b; qty=d-c
+            if spent>0 and qty>0:
+                evs.append({"ts":ts,"side":"buy","price":spent/qty,"btc":spent,"qty":qty})
+            continue
+        ms = RE_SELL.search(ln)
+        if ms:
+            _,c,d,a,b = ms.groups()
+            c,d,a,b = float(c),float(d),float(a),float(b)
+            got=b-a; qty=c-d
+            if got>0 and qty>0:
+                evs.append({"ts":ts,"side":"sell","price":got/qty,"btc":got,"qty":qty})
+    return evs
+
+def round_trips(evs, coin):
+    # empareja compra->venta en operaciones cerradas; deja la compra suelta como abierta
+    trips=[]; ob=None
+    for e in evs:
+        if e["side"]=="buy":
+            ob=e
+        elif e["side"]=="sell" and ob:
+            trips.append({
+                "coin":coin,"open_ts":ob["ts"],"close_ts":e["ts"],
+                "entry":ob["price"],"exit":e["price"],
+                "btc_in":ob["btc"],"btc_out":e["btc"],
+                "res_btc":e["btc"]-ob["btc"],
+                "res_pct":((e["price"]/ob["price"]-1)*100 if ob["price"] else 0.0),
+            })
+            ob=None
+    op=None
+    if ob:
+        op={"coin":coin,"open_ts":ob["ts"],"entry":ob["price"],"btc_in":ob["btc"],"qty":ob["qty"]}
+    return trips, op
+
+def trades_payload():
+    trips=[]; opens=[]
+    for sym, name, svc, haltf in BOTS:
+        t,o = round_trips(parse_trades(f"{DIR}/v2_{sym}_log.txt", name), name)
+        trips += t
+        if o: opens.append(o)
+    trips.sort(key=lambda x:x["close_ts"])
+    cum=0.0; accum=[]; wins=0
+    for t in trips:
+        cum += t["res_btc"]
+        if t["res_btc"]>0: wins+=1
+        accum.append({"ts":t["close_ts"],"cum":cum})
+    return {"trips":trips,"open":opens,"accum":accum,
+            "total_btc":cum,"n":len(trips),"wins":wins}
+
 class H(BaseHTTPRequestHandler):
     def _h(self, ctype, code=200):
         self.send_response(code)
@@ -85,6 +148,9 @@ class H(BaseHTTPRequestHandler):
         if self.path.startswith("/estado.json"):
             self._h("application/json")
             self.wfile.write(json.dumps(estado()).encode()); return
+        if self.path.startswith("/trades.json"):
+            self._h("application/json")
+            self.wfile.write(json.dumps(trades_payload()).encode()); return
         if self.path in ("/", "/escalera", "/index.html"):
             try:
                 with open(PAGE, "rb") as f: body = f.read()
