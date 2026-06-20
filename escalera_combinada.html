@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escalera de Mareas · NEAR + RENDER</title>
+<style>
+  :root{
+    --bg:#0a1316; --bg2:#0d181c; --panel:#102025; --panel2:#0c191d;
+    --line:#1b2e34; --line2:#24404a;
+    --ink:#dceaea; --muted:#80979e; --faint:#516870;
+    --verde:#4cc492; --verde-dim:#16322a; --verde-edge:#21513f;
+    --rojo:#df8078; --rojo-dim:#36211f; --rojo-edge:#5a322e;
+    --marea:#5fb0c4; --ambar:#d9a441;
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+    --mono:ui-monospace,'SF Mono','Cascadia Code',Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 500px at 50% -10%, #11272e 0%, transparent 60%),
+      var(--bg);
+    color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.4;
+    padding:22px 18px 40px; min-height:100vh;
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+
+  header{display:flex;justify-content:space-between;align-items:flex-end;
+    gap:18px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:22px}
+  .eyebrow{font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--marea);font-weight:600;margin-bottom:6px}
+  h1{font-family:var(--serif);font-weight:500;font-size:30px;margin:0;letter-spacing:.01em}
+  .sub{color:var(--muted);font-size:12.5px;margin-top:5px;font-family:var(--mono)}
+  .status{text-align:right;font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--verde);
+    margin-left:6px;vertical-align:middle;box-shadow:0 0 0 0 var(--verde)}
+  .dot.live{animation:pulse 2.4s ease-out infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(76,196,146,.5)}70%{box-shadow:0 0 0 7px rgba(76,196,146,0)}100%{box-shadow:0 0 0 0 rgba(76,196,146,0)}}
+  button.refresh{margin-top:8px;background:transparent;border:1px solid var(--line2);color:var(--muted);
+    font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:7px;cursor:pointer}
+  button.refresh:hover{border-color:var(--marea);color:var(--ink)}
+  button.refresh:focus-visible{outline:2px solid var(--marea);outline-offset:2px}
+
+  .coins{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:720px){.coins{grid-template-columns:1fr}}
+
+  .coin{background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .coin-head{padding:16px 18px 14px;border-bottom:1px solid var(--line)}
+  .coin-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .coin-name{font-family:var(--serif);font-size:22px;letter-spacing:.02em}
+  .coin-name small{color:var(--faint);font-size:13px;font-family:var(--mono);letter-spacing:0}
+  .coin-price{font-family:var(--mono);font-size:13px;color:var(--ink);text-align:right}
+  .coin-price .chg{font-size:11px;display:block;margin-top:2px}
+  .up{color:var(--verde)} .down{color:var(--rojo)}
+
+  /* hero: marea de 4H */
+  .marea{margin-top:14px;border-radius:10px;padding:11px 13px;border:1px solid var(--line);
+    display:flex;align-items:center;gap:11px}
+  .marea.v{background:var(--verde-dim);border-color:var(--verde-edge)}
+  .marea.r{background:var(--rojo-dim);border-color:var(--rojo-edge)}
+  .marea.x{background:#161616;border-color:var(--line)}
+  .marea-ico{font-size:17px;line-height:1}
+  .marea-txt{flex:1}
+  .marea-lbl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .marea-state{font-family:var(--mono);font-size:14px;font-weight:600;margin-top:2px}
+  .marea.v .marea-state{color:var(--verde)} .marea.r .marea-state{color:var(--rojo)}
+  .marea-note{font-size:11px;color:var(--muted);margin-top:2px}
+  .real{margin-top:9px;display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:9px;
+    background:#0b1418;border:1px solid var(--line);font-family:var(--mono);font-size:12px;flex-wrap:wrap}
+  .real .rdot{width:9px;height:9px;border-radius:50%;background:var(--faint);flex:none}
+  .real .rdot.l{background:var(--verde);box-shadow:0 0 7px rgba(76,196,146,.45)}
+  .real .rdot.b{background:var(--marea)}
+  .real .rlbl{color:var(--faint);font-size:9px;letter-spacing:.14em;text-transform:uppercase}
+  .real .rmain{color:var(--ink)}
+  .real .pnl{margin-left:auto;font-weight:600}
+  .real .pnl.up{color:var(--verde)} .real .pnl.down{color:var(--rojo)}
+  .real-warn{margin-top:6px;color:var(--ambar);font-size:11.5px;font-family:var(--sans);
+    background:rgba(217,164,65,.07);border:1px solid rgba(217,164,65,.22);border-radius:8px;padding:6px 10px}
+
+  /* escalera */
+  .ladder{padding:8px 12px 14px}
+  .rung{display:grid;grid-template-columns:52px 1fr 1fr 22px;gap:8px;align-items:center;
+    padding:7px 4px;border-bottom:1px dashed var(--line)}
+  .rung:last-child{border-bottom:none}
+  .rung.base{background:rgba(217,164,65,.06);border-radius:8px;
+    border:1px solid rgba(217,164,65,.25);border-bottom:1px solid rgba(217,164,65,.25);margin-top:4px;padding:9px 6px}
+  .tf{font-family:var(--mono);font-size:13px;color:var(--muted);font-weight:600}
+  .rung.base .tf{color:var(--ambar)}
+  .anchor{font-size:9px;color:var(--ambar);display:block;letter-spacing:.05em;margin-top:1px}
+  .pill{border-radius:7px;padding:5px 8px;border:1px solid transparent;font-family:var(--mono)}
+  .pill .k{font-size:9px;letter-spacing:.1em;text-transform:uppercase;opacity:.75;display:block}
+  .pill .d{font-size:12.5px;font-weight:600;margin-top:1px}
+  .pill.v{background:var(--verde-dim);border-color:var(--verde-edge);color:var(--verde)}
+  .pill.r{background:var(--rojo-dim);border-color:var(--rojo-edge);color:var(--rojo)}
+  .pill.na{background:#15191a;border-color:var(--line);color:var(--faint)}
+  .cdot{width:11px;height:11px;border-radius:50%;justify-self:center;background:var(--faint)}
+  .cdot.v{background:var(--verde);box-shadow:0 0 7px rgba(76,196,146,.5)}
+  .cdot.r{background:var(--rojo)}
+  .col-h{display:grid;grid-template-columns:52px 1fr 1fr 22px;gap:8px;
+    padding:0 4px 6px;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+  .col-h span:nth-child(4){text-align:center}
+
+  footer{margin-top:26px;border-top:1px solid var(--line);padding-top:16px;
+    color:var(--muted);font-size:12px;display:grid;gap:7px;max-width:760px}
+  footer b{color:var(--ink);font-weight:600}
+  .leg{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px}
+  .leg i{font-style:normal}
+  .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  @media (prefers-reduced-motion:reduce){.dot.live{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Marea · combo SAR + Supertrend</div>
+      <h1>Escalera de Mareas</h1>
+      <div class="sub">NEAR/BTC · RENDER/BTC — 4H / 6H / 8H / 12H / 1D</div>
+    </div>
+    <div class="status">
+      <div id="clock">cargando…<span class="dot live" id="livedot"></span></div>
+      <button class="refresh" id="refreshBtn">↻ actualizar</button>
+    </div>
+  </header>
+
+  <main class="coins" id="coins"></main>
+
+  <footer>
+    <div class="leg">
+      <i><span class="sw" style="background:var(--verde)"></span>verde = al alza</i>
+      <i><span class="sw" style="background:var(--rojo)"></span>rojo = a la baja</i>
+      <i><b>colchón</b> = cuánto puede caer antes de dar vuelta</i>
+      <i><b>a verde</b> = cuánto falta para girar</i>
+    </div>
+    <div>El <b>combo de 4H</b> (peldaño con ⚓) es el que operan los bots: entran solo si SAR <i>y</i> Supertrend están verdes. Los peldaños de arriba muestran la marea más grande, de contexto.</div>
+    <div>La tira <b>bot real</b> muestra lo que el bot tiene de verdad (leído de su log): si está largo, a qué precio entró y el P&L en vivo. Cuando la <b>señal</b> y el <b>bot real</b> no coinciden, es porque el bot todavía no ejecutó — actúa en su próximo chequeo (~5 min).</div>
+    <div>Se calcula sobre <b>vela cerrada</b> (se descarta la vela en curso), igual que los bots. Los % son orientativos: el giro real ocurre cuando el precio cruza la línea al cierre.</div>
+  </footer>
+</div>
+
+<script>
+const COINS=[{sym:'NEARBTC',name:'NEAR'},{sym:'RENDERBTC',name:'RENDER'}];
+const TFS=['1d','12h','8h','6h','4h'];           // de marea lenta (arriba) a rápida (abajo)
+const BASE='https://api.binance.com';
+const ESTADO_URL='http://167.233.48.213:8001/estado.json';   // estado real de los bots
+let ESTADO=null;
+
+/* ---- indicadores: idénticos al bot (verificados) ---- */
+function psar(H,L,step=0.02,mx=0.2){
+  const n=H.length, up=new Array(n).fill(true), val=new Array(n).fill(L[0]);
+  let tr=true,af=step,ep=H[0],sar=L[0]; val[0]=sar;
+  for(let i=1;i<n;i++){
+    let s=sar+af*(ep-sar);
+    if(tr){
+      s=Math.min(s,L[i-1], i>=2?L[i-2]:L[i-1]);
+      if(L[i]<s){tr=false;s=ep;ep=L[i];af=step;}
+      else if(H[i]>ep){ep=H[i];af=Math.min(af+step,mx);}
+    }else{
+      s=Math.max(s,H[i-1], i>=2?H[i-2]:H[i-1]);
+      if(H[i]>s){tr=true;s=ep;ep=H[i];af=step;}
+      else if(L[i]<ep){ep=L[i];af=Math.min(af+step,mx);}
+    }
+    sar=s; up[i]=tr; val[i]=sar;
+  }
+  return {up,val};
+}
+function supertrend(H,L,C,atrLen=10,mult=3.0){
+  const n=C.length;
+  const tr=new Array(n).fill(0); tr[0]=H[0]-L[0];
+  for(let i=1;i<n;i++) tr[i]=Math.max(H[i]-L[i],Math.abs(H[i]-C[i-1]),Math.abs(L[i]-C[i-1]));
+  const a=1/atrLen, atr=new Array(n).fill(0); atr[0]=tr[0];
+  for(let i=1;i<n;i++) atr[i]=a*tr[i]+(1-a)*atr[i-1];
+  const fu=new Array(n).fill(0),fl=new Array(n).fill(0),bull=new Array(n).fill(true);
+  let hl2=(H[0]+L[0])/2; fu[0]=hl2+mult*atr[0]; fl[0]=hl2-mult*atr[0];
+  for(let i=1;i<n;i++){
+    hl2=(H[i]+L[i])/2; const u=hl2+mult*atr[i], lo=hl2-mult*atr[i];
+    fu[i]=(u<fu[i-1]||C[i-1]>fu[i-1])?u:fu[i-1];
+    fl[i]=(lo>fl[i-1]||C[i-1]<fl[i-1])?lo:fl[i-1];
+    bull[i]=bull[i-1]?((C[i]<fl[i])?false:true):((C[i]>fu[i])?true:false);
+  }
+  const line=bull.map((b,i)=>b?fl[i]:fu[i]);
+  return {bull,line};
+}
+
+/* ---- data ---- */
+async function fetchKlines(sym,tf){
+  const r=await fetch(`${BASE}/api/v3/klines?symbol=${sym}&interval=${tf}&limit=400`);
+  if(!r.ok) throw new Error('klines '+r.status);
+  let raw=await r.json();
+  raw=raw.slice(0,-1);                       // descarto la vela en curso
+  return {
+    H:raw.map(k=>+k[2]), L:raw.map(k=>+k[3]), C:raw.map(k=>+k[4])
+  };
+}
+async function fetch24(sym){
+  const r=await fetch(`${BASE}/api/v3/ticker/24hr?symbol=${sym}`);
+  if(!r.ok) throw new Error('ticker '+r.status);
+  return r.json();
+}
+
+/* ---- cálculo por temporalidad ---- */
+function rowFor(d){
+  const {H,L,C}=d;
+  if(C.length<30) return {ok:false};
+  const p=psar(H,L), s=supertrend(H,L,C);
+  const i=C.length-1, close=C[i];
+  const sarUp=p.up[i], sarVal=p.val[i];
+  const stBull=s.bull[i], stLine=s.line[i];
+  const sarDist=Math.abs(close-sarVal)/close*100;
+  const stDist =Math.abs(close-stLine)/close*100;
+  return {ok:true,sarUp,stBull,sarDist,stDist,combo:sarUp&&stBull};
+}
+
+function pill(green,dist){
+  const cls=green?'v':'r';
+  const k=green?'verde · colchón':'rojo · a verde';
+  return `<div class="pill ${cls}"><span class="k">${k}</span><span class="d">${dist.toFixed(2)}%</span></div>`;
+}
+function pillNA(){return `<div class="pill na"><span class="k">sin datos</span><span class="d">—</span></div>`;}
+
+function renderCoin(c){
+  const rows=TFS.map(tf=>{
+    const r=c.rows[tf];
+    const base=tf==='4h';
+    const tfLbl=`<span class="tf">${tf.toUpperCase()}${base?'<span class="anchor">⚓ bot</span>':''}</span>`;
+    if(!r||!r.ok){
+      return `<div class="rung${base?' base':''}">${tfLbl}${pillNA()}${pillNA()}<div class="cdot"></div></div>`;
+    }
+    const cdot=r.combo?'v':'r';
+    return `<div class="rung${base?' base':''}">${tfLbl}
+      ${pill(r.sarUp,r.sarDist)}${pill(r.stBull,r.stDist)}
+      <div class="cdot ${cdot}"></div></div>`;
+  }).join('');
+
+  // hero: señal del combo de 4H
+  const r4=c.rows['4h'];
+  let mClass='x',mIco='…',mState='—',mNote='';
+  if(r4&&r4.ok){
+    if(r4.combo){ mClass='v';mIco='🌊';mState='SEÑAL 4H VERDE';mNote='la señal pide estar largo (comprar / mantener)'; }
+    else{
+      mClass='r';mIco='⚓';mState='SEÑAL 4H ROJA';
+      if(r4.sarUp&&!r4.stBull) mNote='SAR verde, falta que el Supertrend confirme';
+      else if(!r4.sarUp&&r4.stBull) mNote='Supertrend verde, falta que el SAR confirme';
+      else mNote='la señal pide estar en BTC (refugio)';
+    }
+  }
+
+  // realidad: posición real del bot (leída del log vía estado_server)
+  const est = (ESTADO && ESTADO[c.sym] && ESTADO[c.sym].ok) ? ESTADO[c.sym] : null;
+  let realHtml, warnHtml='';
+  if(!est){
+    realHtml=`<div class="real"><span class="rdot"></span><span class="rlbl">bot real</span>`+
+             `<span class="rmain" style="color:var(--faint)">sin conexión al estado del bot</span></div>`;
+  } else if(est.pos==='LARGO'){
+    let pnl='';
+    if(c.t && est.entry){
+      const p=(+c.t.lastPrice/est.entry-1)*100;
+      pnl=`<span class="pnl ${p>=0?'up':'down'}">${p>=0?'+':''}${p.toFixed(2)}%</span>`;
+    }
+    realHtml=`<div class="real"><span class="rdot l"></span><span class="rlbl">bot real</span>`+
+             `<span class="rmain">LARGO · ${est.qty.toFixed(2)} ${c.name} · entró ${est.entry.toFixed(8)}</span>${pnl}</div>`;
+  } else {
+    realHtml=`<div class="real"><span class="rdot b"></span><span class="rlbl">bot real</span>`+
+             `<span class="rmain">en BTC · ${(est.btc||0).toFixed(8)} libre</span></div>`;
+  }
+  if(est && r4 && r4.ok){
+    if(r4.combo && est.pos==='BTC') warnHtml=`<div class="real-warn">⚠ la señal está verde — el bot entra en el próximo chequeo (~5 min)</div>`;
+    else if(!r4.combo && est.pos==='LARGO') warnHtml=`<div class="real-warn">⚠ la señal giró a rojo — el bot vende en el próximo chequeo (~5 min)</div>`;
+  }
+
+  let price='—',chg='';
+  if(c.t){
+    price=(+c.t.lastPrice).toFixed(8)+' BTC';
+    const pc=+c.t.priceChangePercent;
+    chg=`<span class="chg ${pc>=0?'up':'down'}">${pc>=0?'+':''}${pc.toFixed(2)}% 24h</span>`;
+  }
+
+  return `<section class="coin">
+    <div class="coin-head">
+      <div class="coin-top">
+        <div class="coin-name">${c.name} <small>/ BTC</small></div>
+        <div class="coin-price">${price}${chg}</div>
+      </div>
+      <div class="marea ${mClass}">
+        <div class="marea-ico">${mIco}</div>
+        <div class="marea-txt">
+          <div class="marea-lbl">Señal · combo de 4H</div>
+          <div class="marea-state">${mState}</div>
+          <div class="marea-note">${mNote}</div>
+        </div>
+      </div>
+      ${realHtml}${warnHtml}
+    </div>
+    <div class="ladder">
+      <div class="col-h"><span>TF</span><span>SAR</span><span>Supertrend</span><span>combo</span></div>
+      ${rows}
+    </div>
+  </section>`;
+}
+
+async function loadCoin(c){
+  c.rows={};
+  await Promise.all(TFS.map(async tf=>{
+    try{ c.rows[tf]=rowFor(await fetchKlines(c.sym,tf)); }
+    catch(e){ c.rows[tf]={ok:false}; }
+  }));
+  try{ c.t=await fetch24(c.sym); }catch(e){ c.t=null; }
+}
+
+async function fetchEstado(){
+  try{ const r=await fetch(ESTADO_URL,{cache:'no-store'}); if(!r.ok) throw 0; ESTADO=await r.json(); }
+  catch(e){ ESTADO=null; }
+}
+
+let loading=false;
+async function refresh(){
+  if(loading) return; loading=true;
+  document.getElementById('livedot').style.opacity='1';
+  try{
+    await Promise.all([...COINS.map(loadCoin), fetchEstado()]);
+    document.getElementById('coins').innerHTML=COINS.map(renderCoin).join('');
+    const t=new Date();
+    document.getElementById('clock').innerHTML=
+      `actualizado ${t.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}<span class="dot live"></span>`;
+  }catch(e){
+    document.getElementById('clock').innerHTML='error al cargar — ¿Binance accesible?';
+  }
+  loading=false;
+}
+
+document.getElementById('refreshBtn').addEventListener('click',refresh);
+refresh();
+setInterval(refresh,60000);
+</script>
+</body>
+</html>
