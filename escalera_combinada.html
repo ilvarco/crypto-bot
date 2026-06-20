@@ -265,7 +265,7 @@ function renderCoin(c){
              `<span class="rmain">LARGO · ${est.qty.toFixed(2)} ${c.name} · entró ${est.entry.toFixed(8)}</span>${pnl}</div>`;
   } else {
     realHtml=`<div class="real"><span class="rdot b"></span><span class="rlbl">bot real</span>`+
-             `<span class="rmain">en BTC · ${(est.btc||0).toFixed(8)} libre</span></div>`;
+             `<span class="rmain">en BTC · esperando verde</span></div>`;
   }
   if(est && r4 && r4.ok){
     if(r4.combo && est.pos==='BTC') warnHtml=`<div class="real-warn">⚠ la señal está verde — el bot entra en el próximo chequeo (~5 min)</div>`;
