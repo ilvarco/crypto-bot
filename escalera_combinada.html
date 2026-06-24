@@ -85,6 +85,13 @@
     border:1px solid;margin-left:9px;white-space:nowrap;vertical-align:middle}
   .health.ok{color:var(--verde);border-color:var(--verde-edge);background:var(--verde-dim)}
   .health.bad{color:var(--rojo);border-color:var(--rojo-edge);background:var(--rojo-dim)}
+  .rango{margin-top:10px;padding:9px 11px;border-radius:9px;background:#0b1418;border:1px solid var(--line)}
+  .rango-top{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.04em}
+  .rango-lbl{font-weight:600;letter-spacing:.08em}
+  .rango-bar{position:relative;height:7px;margin:7px 0 3px;border-radius:5px;
+    background:linear-gradient(90deg,#3a2422,#15252a 50%,#16322a)}
+  .rango-mark{position:absolute;top:-2px;width:3px;height:11px;border-radius:2px;background:var(--ink);transform:translateX(-50%);box-shadow:0 0 5px rgba(220,234,234,.5)}
+  .rango-ends{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--faint)}
   .movim{margin-top:22px;background:linear-gradient(180deg,var(--panel),var(--panel2));
     border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px}
   .movim h2{font-family:var(--serif);font-weight:500;font-size:21px;margin:0 0 3px}
@@ -163,6 +170,7 @@
     <div>El <b>combo de 4H</b> (peldaño con ⚓) es el que operan los bots: entran solo si SAR <i>y</i> Supertrend están verdes. Los peldaños de arriba muestran la marea más grande, de contexto.</div>
     <div>La tira <b>bot real</b> muestra lo que el bot tiene de verdad (leído de su log): si está largo, a qué precio entró y el P&L en vivo. Cuando la <b>señal</b> y el <b>bot real</b> no coinciden, es porque el bot todavía no ejecutó — actúa en su próximo chequeo (~5 min).</div>
     <div>El indicador al lado de cada moneda muestra la salud del bot: <b style="color:var(--verde)">● operando</b> (servicio vivo, sin freno), <b style="color:var(--rojo)">⛔ frenado</b> (freno de mano activo) o <b style="color:var(--rojo)">⛔ caído</b> (el servicio no corre). Si ves rojo, el bot no está operando y hay que revisar el server.</div>
+    <div>La barra <b>fuerza vs BTC · rango 30d</b> muestra qué tan caro o barato está el par dentro de su rango de los últimos 30 días. <b style="color:var(--verde)">Caro</b> (marca a la derecha) = el ratio está alto. <b style="color:var(--rojo)">Barato</b> (marca a la izquierda) = ratio bajo. Para convertir NEAR→BTC sin rematarlo, el buen momento es cuando NEAR está <b style="color:var(--verde)">caro</b>; cuando está barato, no conviene. Es una guía de posición en el rango, no una garantía de techo exacto.</div>
     <div>Se calcula sobre <b>vela cerrada</b> (se descarta la vela en curso), igual que los bots. Los % son orientativos: el giro real ocurre cuando el precio cruza la línea al cierre.</div>
   </footer>
 </div>
@@ -319,6 +327,20 @@ function renderCoin(c){
     chg=`<span class="chg ${pc>=0?'up':'down'}">${pc>=0?'+':''}${pc.toFixed(2)}% 24h</span>`;
   }
 
+  let rangoHtml='';
+  if(c.range){
+    const p=c.range.pct;
+    let lbl,lcol;
+    if(p>=66){ lbl='CARO'; lcol='var(--verde)'; }
+    else if(p<=33){ lbl='BARATO'; lcol='var(--rojo)'; }
+    else { lbl='NEUTRAL'; lcol='var(--muted)'; }
+    rangoHtml=`<div class="rango">
+      <div class="rango-top"><span>fuerza vs BTC · rango 30d</span><span class="rango-lbl" style="color:${lcol}">${lbl} · ${p.toFixed(0)}%</span></div>
+      <div class="rango-bar"><div class="rango-mark" style="left:${Math.max(1,Math.min(99,p)).toFixed(1)}%"></div></div>
+      <div class="rango-ends"><span>barato</span><span>caro</span></div>
+    </div>`;
+  }
+
   return `<section class="coin">
     <div class="coin-head">
       <div class="coin-top">
@@ -333,7 +355,7 @@ function renderCoin(c){
           <div class="marea-note">${mNote}</div>
         </div>
       </div>
-      ${realHtml}${healthWarn}${warnHtml}
+      ${realHtml}${healthWarn}${warnHtml}${rangoHtml}
     </div>
     <div class="ladder">
       <div class="col-h"><span>TF</span><span>SAR</span><span>Supertrend</span><span>combo</span></div>
@@ -343,12 +365,23 @@ function renderCoin(c){
 }
 
 async function loadCoin(c){
-  c.rows={};
+  c.rows={}; c.range=null;
   await Promise.all(TFS.map(async tf=>{
-    try{ c.rows[tf]=rowFor(await fetchKlines(c.sym,tf)); }
-    catch(e){ c.rows[tf]={ok:false}; }
+    try{
+      const d=await fetchKlines(c.sym,tf);
+      c.rows[tf]=rowFor(d);
+      if(tf==='4h') c.range=rangePos(d.C,180);   // 180 velas 4h ≈ 30 dias
+    }catch(e){ c.rows[tf]={ok:false}; }
   }));
   try{ c.t=await fetch24(c.sym); }catch(e){ c.t=null; }
+}
+
+function rangePos(C,n){
+  const seg=C.slice(-n);
+  if(seg.length<20) return null;
+  const lo=Math.min(...seg), hi=Math.max(...seg), cur=seg[seg.length-1];
+  if(hi<=lo) return null;
+  return {lo,hi,cur,pct:(cur-lo)/(hi-lo)*100};
 }
 
 async function fetchEstado(){
